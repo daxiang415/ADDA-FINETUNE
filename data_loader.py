@@ -21,9 +21,9 @@ set_all_seeds(42)
 
 def scale(x, y, trans):
     #x = trans.transform(x).astype(np.float32) ####transform 将训练数据转换成正态分布
-    #y = np.log10(y.to_numpy().astype(np.float32))
-    x = x.to_numpy().astype(np.float32)
 
+    x = x.to_numpy().astype(np.float32)
+    #y = np.log10(y.to_numpy().astype(np.float32))
     y=y.to_numpy().astype(np.float32)
 
     return x, y
@@ -31,8 +31,9 @@ def scale(x, y, trans):
 
 def load_data():
     # 读取数据
-    laixi_data = pd.read_excel('chongsheng_data.xlsx')
-    tokyo_data = pd.read_excel('chongsheng_data.xlsx')
+    tokyo_data = pd.read_excel('tokyo_data.xlsx')
+
+    chongsheng_data = pd.read_excel('chongsheng_data.xlsx')
 
     props = [#'day_of_year',
              #'month',
@@ -50,81 +51,76 @@ def load_data():
     target = ['solar_radiation_modification']
 
     # 时间划分
-    laixi_data['time'] = pd.to_datetime(laixi_data['time'], dayfirst=True)  # 改time为时间戳格式
-    s_date = '2021-07-01 00:00'
-    e_date = '2021-07-31 23:00'
-    # s_date_test = '2021-06-24 00:00'
-    # e_date_test = '2021-12-31 23:00'
-    #
-    s_date_test = '2021-12-25 00:00'
-    e_date_test = '2022-12-31 23:00'
+    tokyo_data['time'] = pd.to_datetime(tokyo_data['time'], dayfirst=True)  # 改time为时间戳格式
 
+    chongsheng_data['time'] = pd.to_datetime(chongsheng_data['time'], dayfirst=True)  # 改time为时间戳格式
+
+    s_date = '2020-01-01 00:00'
+    e_date = '2021-6-30 23:00'
+    s_date_test = '2021-06-24 00:00'
+    e_date_test = '2021-12-31 23:00'
+    # 划分数据集
     train_data_tokyo = tokyo_data[(s_date <= tokyo_data['time']) & (tokyo_data['time'] <= e_date)]
+    test_data_tokyo = tokyo_data[(s_date_test <= tokyo_data['time']) & (tokyo_data['time'] <= e_date_test)]
+
+    train_data_chongsheng = chongsheng_data[(s_date <= chongsheng_data['time']) & (chongsheng_data['time'] <= e_date)]
+    test_data_chongsheng = chongsheng_data[(s_date_test <= chongsheng_data['time']) & (chongsheng_data['time'] <= e_date_test)]
 
     train_x_tokyo, train_y_tokyo = train_data_tokyo[props], train_data_tokyo[target]
 
-    trans_tokyo = StandardScaler().fit(train_x_tokyo)
+    train_x_chongsheng, train_y_chongsheng = train_data_chongsheng[props], train_data_chongsheng[target]
 
-    # 划分数据集
-    train_data = laixi_data[(s_date <= laixi_data['time']) & (laixi_data['time'] <= e_date)]
-    test_data = laixi_data[(s_date_test <= laixi_data['time']) & (laixi_data['time'] <= e_date_test)]
-
-    train_x, train_y = train_data[props], train_data[target]
-    test_x, test_y = test_data[props], test_data[target]
 
     # 归一化
-    trans = StandardScaler().fit(train_x)  ####StandardScaler().fit()用于计算 train_x的均值和方差
-    train_x, train_y = scale(train_x, train_y, trans)
-    test_x, test_y = scale(test_x, test_y, trans_tokyo)
+    trans_tokyo = StandardScaler().fit(train_x_tokyo)  ####StandardScaler().fit()用于计算 train_x的均值和方差
+    train_x_tokyo, train_y_tokyo = scale(train_x_tokyo, train_y_tokyo, trans_tokyo)
+
+    #trans_chongsheng = StandardScaler().fit(train_x_chongsheng)  ####StandardScaler().fit()用于计算 train_x的均值和方差
+    train_x_chongsheng, train_y_chongsheng = scale(train_x_chongsheng, train_y_chongsheng, trans_tokyo)
+
+    y_mean = train_y_tokyo.mean()
+    y_std = train_y_tokyo.std()
+
+    # train_y_tokyo = (train_y_tokyo - y_mean) / y_std
+    #
+    # train_y_chongsheng = (train_y_chongsheng- y_mean) / y_std
 
 
 
 
 
-    print('训练集: ', train_x.shape, train_y.shape)
-    print('测试集: ', test_x.shape, test_y.shape)
-    return (train_x, train_y), (test_x, test_y)
+    return (train_x_tokyo, train_y_tokyo), (train_x_chongsheng, train_y_chongsheng)
 
 
 
 class TrainData(Dataset):
     def __init__(self):
         super(TrainData, self).__init__()
-        (self.train_x, self.train_y), _ = load_data()
-        self.encode_x = np.concatenate([self.train_x, self.train_y], axis=-1) ####编码意味着在最后的维度上将 train_x和train_y 进行拼接
+        (self.train_x_tokyo, self.train_y_tokyo), (self.train_x_chongsheng, self.train_y_chongsheng) = load_data()
+        self.encode_x_tokyo = np.concatenate([self.train_x_tokyo, self.train_y_tokyo], axis=-1) ####编码意味着在最后的维度上将 train_x和train_y 进行拼接
+        self.encode_x_chongsheng = np.concatenate([self.train_x_chongsheng, self.train_y_chongsheng], axis=-1)
         self.step = 168  ####时间周期
         self.prum = 1  ####单步预测
 
     def __len__(self):   ####下划线的定义： _ 隐藏函数, __实例化后自动调用此函数
-        return self.train_x.shape[0] - self.step
+        return self.train_x_tokyo.shape[0] - self.step
 
     def __getitem__(self, item):   ###item: 在len的范围内随机取一个数字
-        en = self.train_x[item:item + self.step, :]
-        de = self.train_x[item + self.step:item + self.step + self.prum, :2]
-        tg = self.train_y[item + self.step:item + self.step + self.prum].reshape(-1)
-        return en, de, tg
+        en_tokyo = self.train_x_tokyo[item:item + self.step, :]
+        de_tokyo = self.train_x_tokyo[item + self.step:item + self.step + self.prum, :2]
+        tg_tokyo = self.train_y_tokyo[item + self.step:item + self.step + self.prum].reshape(-1)
+
+        en_chongsheng = self.train_x_chongsheng[item:item + self.step, :]
+        de_chongsheng = self.train_x_chongsheng[item + self.step:item + self.step + self.prum, :2]
+        tg_chongsheng = self.train_y_chongsheng[item + self.step:item + self.step + self.prum].reshape(-1)
+        return en_tokyo, de_tokyo, tg_tokyo, en_chongsheng, de_chongsheng, tg_chongsheng
 
 
-class TestData(Dataset):
-    def __init__(self):
-        super(TestData, self).__init__()
-        _, (self.test_x, self.test_y) = load_data()
-        self.encode_x = np.concatenate([self.test_x, self.test_y], axis=-1)
-        self.step = 168
-        self.prum = 1
 
-    def __len__(self):  ####下划线的定义： _ 隐藏函数, __实例化后自动调用此函数
-        return self.test_x.shape[0] - self.step
-
-    def __getitem__(self, item):  ###item: 在len的范围内随机取一个数字
-        en = self.test_x[item:item + self.step, :]
-        de = self.test_x[item + self.step:item + self.step + self.prum, :2]
-        tg = self.test_y[item + self.step:item + self.step + self.prum].reshape(-1)
-        return en, de, tg
 
 
 if __name__ == "__main__":
-    trainData = TestData()
+    trainData = TrainData()
     genData = DataLoader(trainData, batch_size=16, shuffle=True)
-    for i, (en, de, tg) in enumerate(genData):
+    for i, (en, de, tg, _, _, _) in enumerate(genData):
         print(i, en.shape, de.shape, tg.shape)
